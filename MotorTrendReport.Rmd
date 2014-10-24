@@ -1,0 +1,144 @@
+---
+title: "Motor Trends : Automatic or Manual transmission for better mileage ?"
+author: "Girish Babu"
+date: "24 October 2014"
+output: pdf_document
+---
+
+## Executive summary
+
+As part of the Coursera assignment on Regression models, I will try to address the following 2 objectives - 
+
+- "Is an automatic or manual transmission better for MPG ?"
+- "Quantify the MPG difference between automatic and manual transmissions"
+
+Use the `mtcars` dataset from the 1974 Motor Trend US magazine, and performed few Statistical Inference Tests and a corresponding Regression Analysis. Statistical Inference Tests show a difference in mean of about 7 miles more for the manual transmitted cars. Regression Analysis indicates, given that weight and 1/4 mile time are held constant, Manual transmission cars are (14.079 - 4.141 * weight mpg) better than Automatic Transmission cars on average and also that this result is significant. Conclusion is that lighter cars are better off with a Manual transmission, but heavier cars are better off with Automatic transmission.
+
+## Cleaning the data
+
+First step is to load and look at the data:
+
+```{r}
+data(mtcars)
+str(mtcars)
+```
+
+Now we coerce the "cyl", "vs", "gear", "carb" and "am" variables into factor variables:
+
+```{r}
+mtcars$cyl <- factor(mtcars$cyl)
+mtcars$vs <- factor(mtcars$vs)
+mtcars$gear <- factor(mtcars$gear)
+mtcars$carb <- factor(mtcars$carb)
+mtcars$am <- factor(mtcars$am)
+```
+
+Let me rename the levels of the "am" variable into "Auto" and "Manual", for better readability:
+
+```{r}
+levels(mtcars$am) <- c("Auto", "Manual")
+```
+
+## Exploratory analysis
+
+We begin by plotting boxplots of the variable "mpg" when "am" is "Auto" or "Manual" (see below). This plot suggests an increase in mpg when cars had manual gears.
+
+### Figure : "mpg" vs. "transmission type"
+
+```{r  fig.height = 3, fig.width = 3}
+plot(mpg ~ am, data = mtcars)
+title(main = "Mpg by transmission type", xlab = "am", ylab = "mpg")
+```
+
+
+We then plot the relationships between all the variables of the dataset (see below). We may note that variables like "wt", "cyl", "disp" and "hp" seem highly correlated together.
+
+### Figure : Manual transmission Pairs graph
+
+```{r  fig.height = 10, fig.width = 10}
+pairs(mtcars, panel = panel.smooth, main = "Pairs graph for MTCars")
+```
+
+
+## Statistical Inference
+
+Let us perform few statistical tests to compare the mpg means between automatic and manual transmissions.
+
+### Wilcoxon test
+
+Perform a non-parametric test to see if there's a difference in the population means.
+
+```{r, results = 'hide'}
+wilcox.test(mpg ~ am, data = mtcars)
+```
+
+The p-value of `r wilcox.test(mpg ~ am, data = mtcars)$p.value` allows us to reject the null hypothesis that the mileage data of the manual and automatic transmissions are from the same population. This indicates there is a difference.
+
+### T-test
+
+Perform a T-test assuming that mileage data has a normal distribution:
+
+```{r, results = 'hide'}
+t.test(mpg ~ am, data = mtcars)
+```
+
+The p-value of `r t.test(mpg ~ am, data = mtcars)$p.value` clearly shows that Manual & Automatic transmissions are significatively different
+
+## Regression Analysis
+
+Select the Bayesian Information Criteria (BIC) in a stepwise algorithm. This algorithm does not evaluate the BIC for all possible models but uses a search method that compares models sequentially. Thus it bears some comparison to the classical stepwise method; however this has the advantage that no dubious p-values are used:
+
+```{r results = 'hide'}
+model.all <- lm(mpg ~ ., data = mtcars)
+n <- nrow(mtcars)
+model.init <- step(model.all, direction = "backward", k = log(n))
+```
+
+```{r results = 'as-is'}
+summary(model.init)$coefficients
+```
+
+The BIC algorithm tells us to consider "wt" and "qsec" as confounding variables. The individual p-values allows us to reject the hypothesis that the coefficients are null. The adjusted r-squared is `r summary(model.init)$adj.r.squared`, so we may conclude that more than `r round(summary(model.init)$adj.r.squared * 100)`% of the variation is explained by the model.
+
+However, if we take a look a the scatter plot of "mpg" vs. "wt" by transmission type (see below) we may notice that the "wt" variable depends on whether or not the car is automatic transmitted (as automatic transmitted cars tend to weigh more than manual transmitted ones). Apparently, manual transmission only confers an advantage to lighter cars. If the car is heavier than approximately 3 tons, an automatic transmission is actually more fuel-efficient than a manual one. This fact suggests that it would be appropriate to include an interaction term between "wt" and "am".
+
+### Figure : Scatter plot of "mpg" vs. "wt" by type of Transmission
+
+```{r  fig.height = 5, fig.width = 8}
+plot(mtcars$wt, mtcars$mpg, col = mtcars$am, pch = 19, xlab = "weight", ylab = "mpg")
+title(main = "Scatter plot of mpg vs. wt by transmission")
+legend("topright", c("Automatic", "Manual"), col = 1:2, pch = 19)
+```
+
+```{r}
+model <- lm(mpg ~ wt + qsec + am + wt:am, data = mtcars)
+summary(model)$coefficients
+```
+
+The adjusted r-squared is now `r summary(model)$adj.r.squared`, so we may conclude that more than `r round(summary(model)$adj.r.squared * 100)`% of the variation is explained by the model. We will choose this model as our final model.
+
+```{r}
+anova <- anova(lm(mpg ~ am, data = mtcars), lm(mpg ~ am + wt, data = mtcars), model.init, model)
+cbind(anova[1], anova[2], anova[3], anova[4], anova[5], anova[6])
+```
+
+We may notice that when we compare the model with only "am" as independant variable and our chosen model, we reject the null hypothesis that the variables "wt", "qsec" and "wt:am" don't contribute to the accuracy of the model.
+
+```{r}
+confint(model)[c(4, 5), ]
+```
+
+More accurately, we are `95%` confident that the difference in miles per gallon between manual and automatic transmitted cars lies somewhere in the interval [`r as.numeric(confint(model)[4, ][1])` + `r as.numeric(confint(model)[5, ][1])` * wt, `r as.numeric(confint(model)[4, ][2])` + `r as.numeric(confint(model)[5, ][2])` * wt].
+
+## Residuals and diagnostics
+
+### Residual analysis
+
+We begin by studying the residual plots (see below). These plots allow us to verify some assumptions made before:
+
+### Figure : Residual plots
+
+```{r fig.height = 5, fig.width = 5}
+par(mfrow = c(2, 2))
+plot(model)
+```
